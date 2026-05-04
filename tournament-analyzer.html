@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GGPoker Tournament Analyzer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Bebas+Neue&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --bg: #080810;
+  --panel: #0f0f1a;
+  --panel2: #161626;
+  --border: #1e1e35;
+  --border2: #2a2a45;
+  --gold: #f5c842;
+  --gold2: #e6a800;
+  --green: #22d97a;
+  --red: #f04060;
+  --blue: #4f8eff;
+  --purple: #a855f7;
+  --text: #e2e2f0;
+  --muted: #5a5a80;
+  --muted2: #3a3a58;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  min-height: 100vh;
+}
+
+/* Noise texture overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.4;
+}
+
+.app {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 24px 60px;
+}
+
+/* ── HEADER ── */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 28px 0 24px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 32px;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.brand-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 36px;
+  letter-spacing: 3px;
+  color: var(--gold);
+  line-height: 1;
+}
+
+.brand-sub {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.pill {
+  background: var(--panel2);
+  border: 1px solid var(--border2);
+  border-radius: 100px;
+  padding: 6px 14px;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: 'Space Mono', monospace;
+  letter-spacing: 1px;
+  transition: all 0.2s;
+}
+
+.pill.active {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(245,200,66,0.08);
+}
+
+/* ── DROP ZONE ── */
+.drop-zone {
+  border: 1px dashed var(--border2);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 56px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.25s;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 32px;
+}
+
+.drop-zone::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(245,200,66,0.06) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.drop-zone:hover, .drop-zone.over {
+  border-color: var(--gold);
+  background: rgba(245,200,66,0.03);
+}
+
+.drop-zone:hover::before, .drop-zone.over::before { opacity: 1; }
+
+.drop-icon {
+  font-size: 40px;
+  margin-bottom: 16px;
+  display: block;
+  filter: grayscale(0.2);
+}
+
+.drop-zone h2 {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 22px;
+  letter-spacing: 3px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.drop-zone p {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+#zipInput { display: none; }
+
+/* ── PROGRESS ── */
+.progress-wrap {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  display: none;
+}
+
+.progress-wrap.show { display: block; animation: fadeUp 0.3s ease; }
+
+.progress-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+
+.progress-label { color: var(--text); letter-spacing: 1px; }
+.progress-count { color: var(--gold); font-family: 'Space Mono', monospace; }
+
+.bar-track {
+  background: var(--border);
+  border-radius: 4px;
+  height: 4px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold2), var(--gold));
+  border-radius: 4px;
+  width: 0%;
+  transition: width 0.2s ease;
+}
+
+.progress-filename {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: 'Space Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── ERROR ── */
+.error-bar {
+  background: rgba(240,64,96,0.1);
+  border: 1px solid rgba(240,64,96,0.3);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--red);
+  margin-bottom: 20px;
+  display: none;
+}
+.error-bar.show { display: block; }
+
+/* ── RESULTS ── */
+#results { display: none; }
+#results.show { display: block; animation: fadeUp 0.4s ease; }
+
+/* ── KPI ROW ── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.kpi {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 20px 18px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.kpi:hover { border-color: var(--border2); }
+
+.kpi-accent {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+}
+
+.kpi-label {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.kpi-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 30px;
+  letter-spacing: 1px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.kpi-sub {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.c-gold { color: var(--gold); }
+.c-green { color: var(--green); }
+.c-red { color: var(--red); }
+.c-blue { color: var(--blue); }
+.c-purple { color: var(--purple); }
+.c-text { color: var(--text); }
+
+/* ── CHART GRID ── */
+.chart-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.chart-grid-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.chart-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+}
+
+.card-title {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+  font-weight: 500;
+}
+
+.chart-wrap {
+  position: relative;
+}
+
+/* ── PLACE BARS ── */
+.place-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.place-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.place-badge {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.place-bar-track {
+  flex: 1;
+  background: var(--border);
+  border-radius: 3px;
+  height: 22px;
+  overflow: hidden;
+  position: relative;
+}
+
+.place-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  padding-left: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #000;
+  min-width: 28px;
+  transition: width 0.8s cubic-bezier(.16,1,.3,1);
+}
+
+.place-count {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  width: 28px;
+  flex-shrink: 0;
+}
+
+/* ── TABLE ── */
+.table-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.table-wrap {
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+thead th {
+  padding: 10px 20px;
+  text-align: left;
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  background: var(--panel2);
+  font-weight: 400;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+tbody td {
+  padding: 9px 20px;
+  border-bottom: 1px solid rgba(30,30,53,0.6);
+}
+
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(245,200,66,0.03); }
+
+.place-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Space Mono', monospace;
+}
+
+.chip-1 { background: rgba(245,200,66,0.2); color: var(--gold); border: 1px solid rgba(245,200,66,0.4); }
+.chip-2 { background: rgba(200,200,220,0.12); color: #c0c0d0; border: 1px solid rgba(200,200,220,0.3); }
+.chip-3 { background: rgba(176,110,60,0.15); color: #cd7f32; border: 1px solid rgba(176,110,60,0.3); }
+.chip-n { background: var(--panel2); color: var(--muted); border: 1px solid var(--border2); }
+
+.mono { font-family: 'Space Mono', monospace; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="brand">
+      <div class="brand-title">TOURNAMENT STATS</div>
+      <div class="brand-sub">GGPoker · Spin&amp;Go</div>
+    </div>
+    <div class="header-right">
+      <div class="pill" id="statusPill">Нет данных</div>
+    </div>
+  </div>
+
+  <!-- Drop zone -->
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="zipInput" accept=".zip">
+    <span class="drop-icon">🏆</span>
+    <h2>ЗАГРУЗИТЕ ZIP АРХИВ</h2>
+    <p>GGPoker · Tournament results · .zip</p>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-top">
+      <span class="progress-label">🗜 Обработка архива…</span>
+      <span class="progress-count" id="progressCount">0 / 0</span>
+    </div>
+    <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+    <div class="progress-filename" id="progressFile">—</div>
+  </div>
+
+  <!-- Error -->
+  <div class="error-bar" id="errorBar"></div>
+
+  <!-- Results -->
+  <div id="results">
+
+    <!-- KPIs -->
+    <div class="kpi-row" id="kpiRow"></div>
+
+    <!-- Charts top row -->
+    <div class="chart-grid">
+      <div class="chart-card">
+        <div class="card-title">📈 Накопительный P&amp;L</div>
+        <div class="chart-wrap" style="height:240px">
+          <canvas id="chartPnl"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="card-title">🏅 Распределение мест</div>
+        <div class="place-bars" id="placeBars"></div>
+      </div>
+    </div>
+
+    <!-- Charts bottom row -->
+    <div class="chart-grid-bottom">
+      <div class="chart-card">
+        <div class="card-title">💰 P&amp;L по турнирам (бар)</div>
+        <div class="chart-wrap" style="height:180px">
+          <canvas id="chartBar"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="card-title">🍕 Результаты по Prize Pool</div>
+        <div class="chart-wrap" style="height:180px">
+          <canvas id="chartDonut"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-card">
+      <div class="table-header">
+        <span class="card-title" style="margin:0">📋 Все турниры</span>
+        <span id="tableCount" class="mono" style="font-size:11px;color:var(--muted)"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Дата</th>
+              <th>Турнир</th>
+              <th>Buy-in</th>
+              <th>Prize Pool</th>
+              <th>Место</th>
+              <th>Выигрыш</th>
+              <th>P&amp;L</th>
+              <th>Нарастающий</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Parser ──────────────────────────────────────────────────────────
+function parseTournamentFile(text, filename) {
+  try {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    // Tournament ID from filename or first line
+    const idMatch = filename.match(/Tournament #(\d+)/) || lines[0].match(/Tournament #(\d+)/);
+    const id = idMatch ? idMatch[1] : '?';
+
+    // Buy-in
+    const buyinMatch = text.match(/Buy-in:\s*\$?([\d.]+)/i);
+    const buyin = buyinMatch ? parseFloat(buyinMatch[1]) : 0;
+
+    // Prize pool
+    const ppMatch = text.match(/Total Prize Pool:\s*\$?([\d.]+)/i);
+    const prizePool = ppMatch ? parseFloat(ppMatch[1]) : 0;
+
+    // Date
+    const dateMatch = text.match(/Tournament started (\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2})/i);
+    const dateStr = dateMatch ? dateMatch[1].replace(/\//g, '-') : '';
+
+    // Place from "You finished in Nth place."
+    const placeMatch = text.match(/You finished in (\d+)(?:st|nd|rd|th) place/i);
+    const place = placeMatch ? parseInt(placeMatch[1]) : null;
+
+    // Players
+    const playersMatch = text.match(/(\d+) Players/i);
+    const players = playersMatch ? parseInt(playersMatch[1]) : 0;
+
+    // Winnings — look for "Nth : Hero, $X"
+    const winMatch = text.match(/\d+(?:st|nd|rd|th)\s*:\s*Hero,\s*\$?([\d.]+)/i);
+    const winnings = winMatch ? parseFloat(winMatch[1]) : 0;
+
+    const pnl = Math.round((winnings - buyin) * 100) / 100;
+
+    return { id, buyin, prizePool, dateStr, place, players, winnings, pnl };
+  } catch(e) {
+    return null;
+  }
+}
+
+// ── Charts ──────────────────────────────────────────────────────────
+let charts = {};
+
+function destroyCharts() {
+  Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
+  charts = {};
+}
+
+function buildPnlChart(tournaments) {
+  let cum = 0;
+  const data = tournaments.map(t => { cum += t.pnl; return Math.round(cum * 100) / 100; });
+  const labels = tournaments.map((_, i) => i + 1);
+  const last = data[data.length - 1] || 0;
+  const color = last >= 0 ? '#22d97a' : '#f04060';
+
+  const ctx = document.getElementById('chartPnl').getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, 240);
+  g.addColorStop(0, last >= 0 ? 'rgba(34,217,122,0.25)' : 'rgba(240,64,96,0.25)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+
+  charts.pnl = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        borderColor: color,
+        backgroundColor: g,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: color,
+        fill: true,
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#161626', borderColor: '#2a2a45', borderWidth: 1,
+          titleColor: '#5a5a80', bodyColor: '#e2e2f0',
+          titleFont: { family: 'Space Mono', size: 10 },
+          bodyFont: { family: 'Space Mono', size: 12 },
+          callbacks: {
+            title: items => `Турнир #${items[0].label}`,
+            label: item => ` ${item.raw >= 0 ? '+' : ''}$${item.raw.toFixed(2)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: 'rgba(30,30,53,0.8)' },
+          ticks: { color: '#3a3a58', font: { family: 'Space Mono', size: 9 }, maxTicksLimit: 10 }
+        },
+        y: {
+          grid: { color: 'rgba(30,30,53,0.8)' },
+          ticks: { color: '#5a5a80', font: { family: 'Space Mono', size: 9 }, callback: v => `$${v.toFixed(2)}` }
+        }
+      }
+    }
+  });
+}
+
+function buildBarChart(tournaments) {
+  const colors = tournaments.map(t => t.pnl >= 0 ? 'rgba(34,217,122,0.7)' : 'rgba(240,64,96,0.7)');
+  const data = tournaments.map(t => t.pnl);
+  const labels = tournaments.map((_, i) => i + 1);
+
+  const ctx = document.getElementById('chartBar').getContext('2d');
+  charts.bar = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors, borderRadius: 2, borderSkipped: false }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#161626', borderColor: '#2a2a45', borderWidth: 1,
+          titleColor: '#5a5a80', bodyColor: '#e2e2f0',
+          titleFont: { family: 'Space Mono', size: 10 },
+          bodyFont: { family: 'Space Mono', size: 12 },
+          callbacks: {
+            title: items => `Турнир #${items[0].label}`,
+            label: item => ` ${item.raw >= 0 ? '+' : ''}$${item.raw.toFixed(2)}`
+          }
+        }
+      },
+      scales: {
+        x: { display: false },
+        y: {
+          grid: { color: 'rgba(30,30,53,0.8)' },
+          ticks: { color: '#5a5a80', font: { family: 'Space Mono', size: 9 }, callback: v => `$${v.toFixed(2)}` }
+        }
+      }
+    }
+  });
+}
+
+function buildDonutChart(tournaments) {
+  // Group by prize pool size
+  const groups = {};
+  tournaments.forEach(t => {
+    const key = `$${t.prizePool.toFixed(2)}`;
+    if (!groups[key]) groups[key] = { total: 0, count: 0 };
+    groups[key].total += t.pnl;
+    groups[key].count++;
+  });
+
+  const labels = Object.keys(groups).sort();
+  const data = labels.map(k => groups[k].count);
+  const palette = ['#f5c842','#22d97a','#4f8eff','#a855f7','#f04060','#fb923c'];
+
+  const ctx = document.getElementById('chartDonut').getContext('2d');
+  charts.donut = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: palette.slice(0, labels.length), borderWidth: 2, borderColor: '#0f0f1a' }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            color: '#5a5a80', font: { family: 'Space Mono', size: 10 },
+            boxWidth: 10, padding: 12
+          }
+        },
+        tooltip: {
+          backgroundColor: '#161626', borderColor: '#2a2a45', borderWidth: 1,
+          callbacks: {
+            label: ctx => ` ${ctx.label}: ${ctx.parsed} турниров`
+          }
+        }
+      }
+    }
+  });
+}
+
+function buildPlaceBars(tournaments) {
+  const counts = {};
+  tournaments.forEach(t => {
+    if (t.place !== null) counts[t.place] = (counts[t.place] || 0) + 1;
+  });
+
+  const places = Object.keys(counts).map(Number).sort((a, b) => a - b);
+  const max = Math.max(...Object.values(counts));
+
+  const placeColors = {
+    1: '#f5c842', 2: '#c0c0d0', 3: '#cd7f32'
+  };
+
+  const container = document.getElementById('placeBars');
+  container.innerHTML = places.map(p => {
+    const count = counts[p];
+    const pct = (count / max * 100).toFixed(1);
+    const color = placeColors[p] || '#4f8eff';
+    const label = p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : `${p}th`;
+    return `
+      <div class="place-row">
+        <div class="place-badge">${label}</div>
+        <div class="place-bar-track">
+          <div class="place-bar-fill" style="width:${pct}%;background:${color}">${count}</div>
+        </div>
+        <div class="place-count">${Math.round(count / tournaments.length * 100)}%</div>
+      </div>`;
+  }).join('');
+}
+
+// ── KPI ─────────────────────────────────────────────────────────────
+function buildKpi(tournaments) {
+  const total = tournaments.length;
+  const totalBuyin = Math.round(tournaments.reduce((s, t) => s + t.buyin, 0) * 100) / 100;
+  const totalWon = Math.round(tournaments.reduce((s, t) => s + t.winnings, 0) * 100) / 100;
+  const totalPnl = Math.round((totalWon - totalBuyin) * 100) / 100;
+  const wins = tournaments.filter(t => t.place === 1).length;
+  const itm = tournaments.filter(t => t.winnings > 0).length;
+  const itmPct = (itm / total * 100).toFixed(1);
+  const roi = totalBuyin > 0 ? ((totalPnl / totalBuyin) * 100).toFixed(1) : '0';
+  const avgPnl = (totalPnl / total).toFixed(3);
+  const best = Math.max(...tournaments.map(t => t.pnl));
+  const worst = Math.min(...tournaments.map(t => t.pnl));
+
+  const kpis = [
+    { label: 'Итого P&L', val: `${totalPnl >= 0 ? '+' : ''}$${Math.abs(totalPnl).toFixed(2)}`, sub: `${total} турниров`, color: totalPnl >= 0 ? '#22d97a' : '#f04060', accent: totalPnl >= 0 ? '#22d97a' : '#f04060' },
+    { label: 'ROI', val: `${roi}%`, sub: `Возврат на бай-ин`, color: parseFloat(roi) >= 0 ? '#22d97a' : '#f04060', accent: '#f5c842' },
+    { label: 'ITM', val: `${itmPct}%`, sub: `${itm} из ${total} в деньгах`, color: '#4f8eff', accent: '#4f8eff' },
+    { label: 'Победы (1 место)', val: `${wins}`, sub: `Win rate: ${(wins/total*100).toFixed(1)}%`, color: '#f5c842', accent: '#f5c842' },
+    { label: 'Вложено', val: `$${totalBuyin.toFixed(2)}`, sub: `Avg $${(totalBuyin/total).toFixed(2)}/турнир`, color: '#a855f7', accent: '#a855f7' },
+    { label: 'Получено', val: `$${totalWon.toFixed(2)}`, sub: `Avg $${(totalWon/total).toFixed(2)}/турнир`, color: '#fb923c', accent: '#fb923c' },
+    { label: 'Лучший', val: `+$${best.toFixed(2)}`, sub: 'Макс выигрыш за турнир', color: '#22d97a', accent: '#22d97a' },
+    { label: 'Худший', val: `-$${Math.abs(worst).toFixed(2)}`, sub: 'Макс потеря за турнир', color: '#f04060', accent: '#f04060' },
+  ];
+
+  document.getElementById('kpiRow').innerHTML = kpis.map(k => `
+    <div class="kpi">
+      <div class="kpi-accent" style="background:${k.accent}"></div>
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-val" style="color:${k.color}">${k.val}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>
+  `).join('');
+}
+
+// ── Table ────────────────────────────────────────────────────────────
+function buildTable(tournaments) {
+  let cum = 0;
+  const rows = tournaments.map((t, i) => {
+    cum = Math.round((cum + t.pnl) * 100) / 100;
+    const placeClass = t.place === 1 ? 'chip-1' : t.place === 2 ? 'chip-2' : t.place === 3 ? 'chip-3' : 'chip-n';
+    const pnlCol = t.pnl >= 0
+      ? `<span class="mono" style="color:var(--green)">+$${t.pnl.toFixed(2)}</span>`
+      : `<span class="mono" style="color:var(--red)">-$${Math.abs(t.pnl).toFixed(2)}</span>`;
+    const cumCol = cum >= 0
+      ? `<span class="mono" style="color:var(--green)">+$${cum.toFixed(2)}</span>`
+      : `<span class="mono" style="color:var(--red)">-$${Math.abs(cum).toFixed(2)}</span>`;
+    const date = t.dateStr ? t.dateStr.replace('T', ' ').slice(0, 16) : '—';
+    return `<tr>
+      <td class="mono" style="color:var(--muted)">${i+1}</td>
+      <td style="color:var(--muted);font-size:11px">${date}</td>
+      <td class="mono" style="color:var(--muted);font-size:10px">#${t.id.slice(-8)}</td>
+      <td class="mono" style="color:var(--text)">$${t.buyin.toFixed(2)}</td>
+      <td class="mono" style="color:var(--muted)">$${t.prizePool.toFixed(2)}</td>
+      <td><span class="place-chip ${placeClass}">${t.place ?? '?'}</span></td>
+      <td class="mono" style="color:var(--text)">$${t.winnings.toFixed(2)}</td>
+      <td>${pnlCol}</td>
+      <td>${cumCol}</td>
+    </tr>`;
+  });
+  document.getElementById('tableBody').innerHTML = rows.join('');
+  document.getElementById('tableCount').textContent = `${tournaments.length} записей`;
+}
+
+// ── Main render ──────────────────────────────────────────────────────
+function render(tournaments) {
+  // Sort by date
+  tournaments.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+
+  destroyCharts();
+  buildKpi(tournaments);
+  buildPnlChart(tournaments);
+  buildBarChart(tournaments);
+  buildDonutChart(tournaments);
+  buildPlaceBars(tournaments);
+  buildTable(tournaments);
+
+  document.getElementById('results').classList.add('show');
+  document.getElementById('statusPill').textContent = `${tournaments.length} турниров`;
+  document.getElementById('statusPill').classList.add('active');
+
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── ZIP handling ─────────────────────────────────────────────────────
+async function processZip(file) {
+  const errorBar = document.getElementById('errorBar');
+  errorBar.classList.remove('show');
+
+  const pw = document.getElementById('progressWrap');
+  const barFill = document.getElementById('barFill');
+  const progressCount = document.getElementById('progressCount');
+  const progressFile = document.getElementById('progressFile');
+
+  pw.classList.add('show');
+  barFill.style.width = '0%';
+
+  let zip;
+  try {
+    zip = await JSZip.loadAsync(file);
+  } catch(e) {
+    pw.classList.remove('show');
+    errorBar.textContent = 'Не удалось открыть ZIP: ' + e.message;
+    errorBar.classList.add('show');
+    return;
+  }
+
+  const txtFiles = Object.values(zip.files).filter(f => !f.dir && f.name.toLowerCase().endsWith('.txt'));
+  const total = txtFiles.length;
+
+  if (total === 0) {
+    pw.classList.remove('show');
+    errorBar.textContent = 'В архиве не найдено .txt файлов с результатами турниров';
+    errorBar.classList.add('show');
+    return;
+  }
+
+  progressCount.textContent = `0 / ${total}`;
+
+  const tournaments = [];
+  let done = 0;
+
+  for (const f of txtFiles) {
+    try {
+      const text = await f.async('text');
+      const name = f.name.split('/').pop();
+      const t = parseTournamentFile(text, name);
+      if (t) tournaments.push(t);
+      done++;
+      const pct = Math.round(done / total * 100);
+      barFill.style.width = pct + '%';
+      progressCount.textContent = `${done} / ${total}`;
+      progressFile.textContent = name;
+    } catch(e) { /* skip */ }
+  }
+
+  await new Promise(r => setTimeout(r, 300));
+  pw.classList.remove('show');
+
+  if (!tournaments.length) {
+    errorBar.textContent = 'Не удалось распознать ни одного турнира. Проверьте формат файлов.';
+    errorBar.classList.add('show');
+    return;
+  }
+
+  render(tournaments);
+}
+
+// ── Events ───────────────────────────────────────────────────────────
+const dropZone = document.getElementById('dropZone');
+const zipInput = document.getElementById('zipInput');
+
+dropZone.addEventListener('click', () => zipInput.click());
+zipInput.addEventListener('change', e => { if (e.target.files[0]) processZip(e.target.files[0]); });
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (f) processZip(f);
+});
+</script>
+</body>
+</html>
